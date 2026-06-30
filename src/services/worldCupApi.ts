@@ -28,7 +28,7 @@ export type WorldCupApiEvent = {
   bookmakers: ApiBookmaker[];
 };
 
-export type WorldCupFetchResult = {
+type WorldCupFetchResult = {
   matches: Match[];
   requestsRemaining?: number;
 };
@@ -132,7 +132,6 @@ export const worldCupEventToMatch = (
     awayOdds: odds.away,
     selectedOutcomes: ["HOME", "DRAW", "AWAY"],
     oddsSource: {
-      provider: "The Odds API",
       bookmaker: bookmaker.title,
       updatedAt: bookmaker.last_update,
     },

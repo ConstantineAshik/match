@@ -56,7 +56,6 @@ export function MatchForm({
             key={match.id}
             match={match}
             index={index}
-            canRemove
             onChange={(updatedMatch) => updateMatch(index, updatedMatch)}
             onRemove={() => removeMatch(index)}
           />

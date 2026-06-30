@@ -20,9 +20,9 @@ npm run lint
 
 ## Deployment
 
-The GitLab Pages pipeline builds the application from `main` and publishes the
-generated `dist` directory. Vite uses relative asset paths so the same build
-also works on Netlify and other static hosts.
+Netlify configuration is included in `netlify.toml`. It installs dependencies,
+runs the production build, and publishes `dist`. Vite uses relative asset paths
+so the build works on Netlify and other static hosts.
 
 This application is a calculation and analysis tool. It does not place bets or
 provide gambling predictions.

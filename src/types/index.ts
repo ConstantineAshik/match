@@ -25,7 +25,6 @@ export type Match = {
   awayOdds: number;
   selectedOutcomes: OutcomeType[];
   oddsSource?: {
-    provider: string;
     bookmaker: string;
     updatedAt: string;
   };

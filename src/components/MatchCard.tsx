@@ -6,7 +6,6 @@ import { CountrySelect } from "./CountrySelect";
 type MatchCardProps = {
   match: Match;
   index: number;
-  canRemove: boolean;
   onChange: (match: Match) => void;
   onRemove: () => void;
 };
@@ -25,7 +24,6 @@ const outcomeConfig: Array<{
 export function MatchCard({
   match,
   index,
-  canRemove,
   onChange,
   onRemove,
 }: MatchCardProps) {
@@ -72,9 +70,8 @@ export function MatchCard({
         <button
           type="button"
           onClick={onRemove}
-          disabled={!canRemove}
-          title={canRemove ? "Remove match" : undefined}
-          className="icon-button text-slate-400 hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-red-950/30"
+          title="Remove match"
+          className="icon-button text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
         >
           <Trash2 size={17} />
         </button>
