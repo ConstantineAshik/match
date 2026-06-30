@@ -20,9 +20,12 @@ npm run lint
 
 ## Deployment
 
-Netlify configuration is included in `netlify.toml`. It installs dependencies,
-runs the production build, and publishes `dist`. Vite uses relative asset paths
-so the build works on Netlify and other static hosts.
+The GitHub Actions workflow builds and publishes the site to GitHub Pages with
+the `/match/` repository base path. In repository settings, select
+**Settings → Pages → Source → GitHub Actions**.
+
+Netlify configuration remains available in `netlify.toml`. Local and Netlify
+builds use portable relative asset paths.
 
 This application is a calculation and analysis tool. It does not place bets or
 provide gambling predictions.
