@@ -19,6 +19,7 @@ import { SummaryCards } from "./components/SummaryCards";
 import { findCountry } from "./data/countries";
 import type { CurrencyCode, Match } from "./types";
 import {
+  applyCombinationStakes,
   generateCombinations,
   validateMatch,
 } from "./utils/calculations";
@@ -39,7 +40,6 @@ const createDefaultMatch = (): Match => ({
   id: createId(),
   homeTeam: findCountry("ARG"),
   awayTeam: findCountry("BRA"),
-  betAmount: 0,
   homeOdds: 2.45,
   drawOdds: 3.2,
   awayOdds: 2.75,
@@ -51,15 +51,14 @@ const loadSavedMatches = (): Match[] => {
     const saved = localStorage.getItem(MATCHES_STORAGE_KEY);
     if (!saved) return [];
     const parsed: unknown = JSON.parse(saved);
-    return Array.isArray(parsed)
-      ? (parsed as Match[]).map((match) => ({
-          ...match,
-          betAmount:
-            Number.isFinite(match.betAmount) && (match.betAmount ?? 0) >= 0
-              ? match.betAmount
-              : 0,
-        }))
-      : [];
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as Array<Match & { betAmount?: unknown }>).map(
+      (savedMatch) => {
+        const match = { ...savedMatch };
+        delete match.betAmount;
+        return match;
+      },
+    );
   } catch {
     return [];
   }
@@ -90,6 +89,18 @@ function App() {
       return "BDT";
     }
   });
+  const [combinationStakes, setCombinationStakes] = useState<
+    Record<string, number>
+  >(() => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}",
+      ) as { combinationStakes?: Record<string, number> };
+      return saved.combinationStakes ?? {};
+    } catch {
+      return {};
+    }
+  });
   const [isDark, setIsDark] = useState(() => {
     const saved = localStorage.getItem("matchcombo-theme");
     return saved
@@ -105,9 +116,9 @@ function App() {
   useEffect(() => {
     localStorage.setItem(
       SETTINGS_STORAGE_KEY,
-      JSON.stringify({ stake, currency }),
+      JSON.stringify({ stake, currency, combinationStakes }),
     );
-  }, [currency, stake]);
+  }, [combinationStakes, currency, stake]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
@@ -124,13 +135,17 @@ function App() {
   const hasValidMatches =
     matches.length >= 2 &&
     matches.every((match) => validateMatch(match).length === 0);
-  const combinations = useMemo(
+  const baseCombinations = useMemo(
     () => generateCombinations(matches, stake),
     [matches, stake],
   );
-  const totalStake = combinations.length * stake;
-  const totalMatchBet = matches.reduce(
-    (total, match) => total + (match.betAmount ?? 0),
+  const combinations = useMemo(
+    () =>
+      applyCombinationStakes(baseCombinations, stake, combinationStakes),
+    [baseCombinations, combinationStakes, stake],
+  );
+  const totalStake = combinations.reduce(
+    (total, combination) => total + combination.stake,
     0,
   );
   const lowestReturn = combinations.length
@@ -141,6 +156,18 @@ function App() {
     : 0;
 
   const showToast = (message: string) => setToast(message);
+
+  const updateCombinationStake = (
+    combinationId: string,
+    nextStake: number,
+  ) => {
+    const safeStake =
+      Number.isFinite(nextStake) && nextStake >= 0 ? nextStake : 0;
+    setCombinationStakes((current) => ({
+      ...current,
+      [combinationId]: safeStake,
+    }));
+  };
 
   const addMatch = () => {
     if (matches.length >= 10) {
@@ -170,10 +197,7 @@ function App() {
       return;
     }
 
-    setMatches((current) => [
-      ...current,
-      ...matchesToAdd.map((match) => ({ ...match, betAmount: 0 })),
-    ]);
+    setMatches((current) => [...current, ...matchesToAdd]);
     showToast(
       `${matchesToAdd.length} current ${
         matchesToAdd.length === 1 ? "match" : "matches"
@@ -191,6 +215,7 @@ function App() {
     }
     setMatches([]);
     setStake(20);
+    setCombinationStakes({});
     setCurrency("BDT");
     showToast("Calculator reset.");
   };
@@ -198,33 +223,20 @@ function App() {
   const buildCopyText = () => {
     const lines = [
       "MatchCombo Calculator",
-      `Match betting money: ${formatCurrency(totalMatchBet, currency)}`,
       `Total combination stake: ${formatCurrency(totalStake, currency)}`,
       `Combinations: ${combinations.length}`,
       "",
     ];
-    if (matches.length) {
-      lines.push("Match betting money:");
-      matches.forEach((match, index) => {
-        lines.push(
-          `${index + 1}. ${match.homeTeam.name} vs ${match.awayTeam.name}: ${formatCurrency(
-            match.betAmount ?? 0,
-            currency,
-          )}`,
-        );
-      });
-      lines.push("");
-    }
     combinations.forEach((combination, index) => {
       const resultLabel =
         combination.profitLoss >= 0 ? "Profit" : "Loss";
-      const otherCombinationsLoss =
-        combination.stake * Math.max(combinations.length - 1, 0);
+      const otherCombinationsLoss = totalStake - combination.stake;
       lines.push(
         `${index + 1}. ${combination.outcomes
           .map((outcome) => outcome.label)
           .join(" + ")}`,
         `Combined odds: ${combination.combinedOdds.toFixed(3)}`,
+        `Betting money: ${formatCurrency(combination.stake, currency)}`,
         `Winning return: ${formatCurrency(combination.returnAmount, currency)}`,
         `Other combinations lost: ${formatCurrency(
           otherCombinationsLoss,
@@ -268,9 +280,7 @@ function App() {
       combination.combinedOdds.toFixed(6),
       combination.stake.toFixed(2),
       combination.returnAmount.toFixed(2),
-      (
-        combination.stake * Math.max(combinations.length - 1, 0)
-      ).toFixed(2),
+      (totalStake - combination.stake).toFixed(2),
       combination.profitLoss.toFixed(2),
       combination.profitLoss > 0
         ? "Profit"
@@ -364,7 +374,6 @@ function App() {
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(310px,.65fr)]">
           <MatchForm
             matches={matches}
-            currency={currency}
             onMatchesChange={setMatches}
             onAddMatch={addMatch}
           />
@@ -386,7 +395,7 @@ function App() {
               <div className="mt-5 grid grid-cols-[1fr_106px] gap-3">
                 <div>
                   <label className="field-label" htmlFor="stake">
-                    Stake per combination
+                    Stake for all combinations
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">
@@ -399,7 +408,10 @@ function App() {
                       min="0.01"
                       step="0.01"
                       value={stake || ""}
-                      onChange={(event) => setStake(Number(event.target.value))}
+                      onChange={(event) => {
+                        setStake(Number(event.target.value));
+                        setCombinationStakes({});
+                      }}
                       className="input-field w-full pl-8 font-extrabold"
                     />
                   </div>
@@ -423,6 +435,10 @@ function App() {
                   </select>
                 </div>
               </div>
+              <p className="mt-2 text-[11px] leading-4 text-slate-400">
+                This amount updates every combination. Edit any result row
+                below to use a different amount for that combination.
+              </p>
               {!hasValidStake && (
                 <p className="mt-2 text-xs font-semibold text-red-500">
                   Stake must be greater than 0.
@@ -442,18 +458,10 @@ function App() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Combination stake
+                    Total betting money
                   </p>
                   <p className="mt-1 text-2xl font-black text-lime-600 dark:text-lime-400">
                     {formatCurrency(totalStake, currency)}
-                  </p>
-                </div>
-                <div className="col-span-2 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-ink-900/60">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Match betting money
-                  </p>
-                  <p className="mt-1 text-lg font-black text-slate-950 dark:text-white">
-                    {formatCurrency(totalMatchBet, currency)}
                   </p>
                 </div>
               </div>
@@ -505,12 +513,12 @@ function App() {
             matchCount={matches.length}
             combinations={combinations}
             stake={stake}
-            matchBetTotal={totalMatchBet}
             currency={currency}
           />
           <CombinationTable
             combinations={combinations}
             currency={currency}
+            onStakeChange={updateCombinationStake}
           />
         </div>
 

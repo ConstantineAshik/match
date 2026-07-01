@@ -1,13 +1,11 @@
-import { Banknote, CalendarDays, Trash2 } from "lucide-react";
-import type { CurrencyCode, Match, OutcomeType } from "../types";
+import { CalendarDays, Trash2 } from "lucide-react";
+import type { Match, OutcomeType } from "../types";
 import { validateMatch } from "../utils/calculations";
-import { currencySymbol } from "../utils/formatCurrency";
 import { CountrySelect } from "./CountrySelect";
 
 type MatchCardProps = {
   match: Match;
   index: number;
-  currency: CurrencyCode;
   onChange: (match: Match) => void;
   onRemove: () => void;
 };
@@ -26,7 +24,6 @@ const outcomeConfig: Array<{
 export function MatchCard({
   match,
   index,
-  currency,
   onChange,
   onRemove,
 }: MatchCardProps) {
@@ -99,7 +96,7 @@ export function MatchCard({
         />
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <label className="field-label" htmlFor={`title-${match.id}`}>
             Match title <span className="font-normal text-slate-400">(optional)</span>
@@ -127,32 +124,6 @@ export function MatchCard({
               onChange({ ...match, dateTime: event.target.value })
             }
           />
-        </div>
-        <div>
-          <label className="field-label" htmlFor={`bet-amount-${match.id}`}>
-            <Banknote size={13} /> Betting money
-          </label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">
-              {currencySymbol(currency)}
-            </span>
-            <input
-              id={`bet-amount-${match.id}`}
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="0.01"
-              className="input-field w-full pl-8 font-extrabold"
-              value={match.betAmount || ""}
-              placeholder="0.00"
-              onChange={(event) =>
-                onChange({
-                  ...match,
-                  betAmount: Number(event.target.value),
-                })
-              }
-            />
-          </div>
         </div>
       </div>
 

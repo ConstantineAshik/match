@@ -17,7 +17,6 @@ export type MatchOutcome = {
 export type Match = {
   id: string;
   title?: string;
-  betAmount?: number;
   homeTeam: Team;
   awayTeam: Team;
   dateTime?: string;

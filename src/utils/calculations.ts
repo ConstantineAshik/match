@@ -75,7 +75,7 @@ export const generateCombinations = (
   const outcomeCombinations = cartesianProduct(outcomeGroups);
   const totalStake = outcomeCombinations.length * stake;
 
-  return outcomeCombinations.map((outcomes, index) => {
+  return outcomeCombinations.map((outcomes) => {
     const combinedOdds = outcomes.reduce(
       (product, outcome) => product * outcome.odds,
       1,
@@ -83,9 +83,37 @@ export const generateCombinations = (
     const returnAmount = stake * combinedOdds;
 
     return {
-      id: `combination-${index + 1}`,
+      id: `combination-${outcomes
+        .map((outcome) => `${outcome.matchId}-${outcome.type}`)
+        .join("-")}`,
       outcomes,
       combinedOdds,
+      stake,
+      returnAmount,
+      profitLoss: returnAmount - totalStake,
+    };
+  });
+};
+
+export const applyCombinationStakes = (
+  combinations: CombinationResult[],
+  defaultStake: number,
+  stakeOverrides: Record<string, number>,
+): CombinationResult[] => {
+  const stakes = combinations.map((combination) => {
+    const override = stakeOverrides[combination.id];
+    return Number.isFinite(override) && override >= 0
+      ? override
+      : defaultStake;
+  });
+  const totalStake = stakes.reduce((total, stake) => total + stake, 0);
+
+  return combinations.map((combination, index) => {
+    const stake = stakes[index];
+    const returnAmount = stake * combination.combinedOdds;
+
+    return {
+      ...combination,
       stake,
       returnAmount,
       profitLoss: returnAmount - totalStake,

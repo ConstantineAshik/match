@@ -6,19 +6,28 @@ import type {
   FilterOption,
   SortOption,
 } from "../types";
-import { formatCurrency } from "../utils/formatCurrency";
+import {
+  currencySymbol,
+  formatCurrency,
+} from "../utils/formatCurrency";
 
 type CombinationTableProps = {
   combinations: CombinationResult[];
   currency: CurrencyCode;
+  onStakeChange: (combinationId: string, stake: number) => void;
 };
 
 export function CombinationTable({
   combinations,
   currency,
+  onStakeChange,
 }: CombinationTableProps) {
   const [sortBy, setSortBy] = useState<SortOption>("lowest-return");
   const [filterBy, setFilterBy] = useState<FilterOption>("all");
+  const totalStake = combinations.reduce(
+    (total, combination) => total + combination.stake,
+    0,
+  );
 
   const visibleCombinations = useMemo(() => {
     const filtered = combinations.filter((combination) => {
@@ -48,10 +57,10 @@ export function CombinationTable({
           </p>
           {combinations.length > 0 && (
             <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Each row assumes that exact outcome combination wins. “Other
-              combos lost” is the stake lost on every remaining combination;
-              the final result compares the winning return against your full
-              stake.
+              Edit the betting money for any combination. Each row assumes
+              that exact outcome wins; “Other combos lost” is the total stake
+              on every remaining combination, and the final result compares
+              the winning return against your full stake.
             </p>
           )}
         </div>
@@ -102,7 +111,7 @@ export function CombinationTable({
                     (item) => item.id === combination.id,
                   ) + 1;
                 const otherCombinationsLoss =
-                  combination.stake * Math.max(combinations.length - 1, 0);
+                  totalStake - combination.stake;
                 const isProfit = combination.profitLoss > 0;
                 const isLoss = combination.profitLoss < 0;
                 const status = isProfit ? "Profit" : isLoss ? "Loss" : "Even";
@@ -143,6 +152,35 @@ export function CombinationTable({
                     </div>
 
                     <div className="mt-4 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl bg-amber-50 p-3 dark:bg-amber-500/[.07]">
+                        <label
+                          className="text-[9px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400"
+                          htmlFor={`mobile-stake-${combination.id}`}
+                        >
+                          Betting money
+                        </label>
+                        <div className="relative mt-1">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">
+                            {currencySymbol(currency)}
+                          </span>
+                          <input
+                            id={`mobile-stake-${combination.id}`}
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step="0.01"
+                            value={combination.stake || ""}
+                            placeholder="0.00"
+                            onChange={(event) =>
+                              onStakeChange(
+                                combination.id,
+                                Number(event.target.value),
+                              )
+                            }
+                            className="w-full rounded-lg border border-amber-200 bg-white py-1.5 pl-7 pr-2 text-sm font-black text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 dark:border-amber-500/30 dark:bg-ink-800 dark:text-white"
+                          />
+                        </div>
+                      </div>
                       <div className="rounded-xl bg-slate-50 p-3 dark:bg-ink-900/60">
                         <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
                           Combined odds
@@ -202,12 +240,13 @@ export function CombinationTable({
             </div>
 
             <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[900px] text-left">
+            <table className="w-full min-w-[1020px] text-left">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:border-slate-700 dark:bg-ink-900/70">
                   <th className="px-5 py-3.5">#</th>
                   <th className="px-5 py-3.5">Combination</th>
                   <th className="px-5 py-3.5 text-right">Combined odds</th>
+                  <th className="px-5 py-3.5 text-right">Betting money</th>
                   <th className="px-5 py-3.5 text-right">Winning return</th>
                   <th className="px-5 py-3.5 text-right">
                     Other combos lost
@@ -219,7 +258,7 @@ export function CombinationTable({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {visibleCombinations.map((combination) => {
                   const otherCombinationsLoss =
-                    combination.stake * Math.max(combinations.length - 1, 0);
+                    totalStake - combination.stake;
                   const originalIndex =
                     combinations.findIndex((item) => item.id === combination.id) +
                     1;
@@ -273,6 +312,35 @@ export function CombinationTable({
                       <td className="px-5 py-4 text-right text-sm font-bold text-slate-700 dark:text-slate-200">
                         {combination.combinedOdds.toFixed(3)}
                       </td>
+                      <td className="px-5 py-4">
+                        <label
+                          className="relative ml-auto block w-32"
+                          htmlFor={`stake-${combination.id}`}
+                        >
+                          <span className="sr-only">
+                            Betting money for combination {originalIndex}
+                          </span>
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">
+                            {currencySymbol(currency)}
+                          </span>
+                          <input
+                            id={`stake-${combination.id}`}
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step="0.01"
+                            value={combination.stake || ""}
+                            placeholder="0.00"
+                            onChange={(event) =>
+                              onStakeChange(
+                                combination.id,
+                                Number(event.target.value),
+                              )
+                            }
+                            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-7 pr-2 text-right text-sm font-extrabold text-slate-900 outline-none transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 dark:border-slate-700 dark:bg-ink-800 dark:text-white"
+                          />
+                        </label>
+                      </td>
                       <td className="px-5 py-4 text-right text-sm font-extrabold text-slate-950 dark:text-white">
                         {formatCurrency(combination.returnAmount, currency)}
                       </td>
@@ -281,8 +349,7 @@ export function CombinationTable({
                           -{formatCurrency(otherCombinationsLoss, currency)}
                         </span>
                         <span className="mt-0.5 block text-[10px] font-semibold text-slate-400">
-                          {Math.max(combinations.length - 1, 0)} ×{" "}
-                          {formatCurrency(combination.stake, currency)}
+                          total of other stakes
                         </span>
                       </td>
                       <td className={`px-5 py-4 text-right text-sm font-black ${tone}`}>

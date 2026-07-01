@@ -1,17 +1,15 @@
 import { Plus } from "lucide-react";
-import type { CurrencyCode, Match } from "../types";
+import type { Match } from "../types";
 import { MatchCard } from "./MatchCard";
 
 type MatchFormProps = {
   matches: Match[];
-  currency: CurrencyCode;
   onMatchesChange: (matches: Match[]) => void;
   onAddMatch: () => void;
 };
 
 export function MatchForm({
   matches,
-  currency,
   onMatchesChange,
   onAddMatch,
 }: MatchFormProps) {
@@ -58,7 +56,6 @@ export function MatchForm({
             key={match.id}
             match={match}
             index={index}
-            currency={currency}
             onChange={(updatedMatch) => updateMatch(index, updatedMatch)}
             onRemove={() => removeMatch(index)}
           />

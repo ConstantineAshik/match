@@ -15,7 +15,6 @@ type SummaryCardsProps = {
   matchCount: number;
   combinations: CombinationResult[];
   stake: number;
-  matchBetTotal: number;
   currency: CurrencyCode;
 };
 
@@ -23,10 +22,12 @@ export function SummaryCards({
   matchCount,
   combinations,
   stake,
-  matchBetTotal,
   currency,
 }: SummaryCardsProps) {
-  const totalStake = combinations.length * stake;
+  const totalStake = combinations.reduce(
+    (total, combination) => total + combination.stake,
+    0,
+  );
   const lowest = combinations.length
     ? combinations.reduce((current, item) =>
         item.returnAmount < current.returnAmount ? item : current,
@@ -42,7 +43,7 @@ export function SummaryCards({
     {
       label: "Matches",
       value: matchCount.toString(),
-      meta: `${formatCurrency(matchBetTotal, currency)} in match bets`,
+      meta: "in this calculation",
       icon: Goal,
       accent: "text-violet-500 bg-violet-100 dark:bg-violet-500/15",
     },
@@ -54,9 +55,9 @@ export function SummaryCards({
       accent: "text-sky-500 bg-sky-100 dark:bg-sky-500/15",
     },
     {
-      label: "Stake / combo",
+      label: "Default / combo",
       value: formatCurrency(stake, currency),
-      meta: "per combination",
+      meta: "before custom amounts",
       icon: Coins,
       accent: "text-amber-500 bg-amber-100 dark:bg-amber-500/15",
     },

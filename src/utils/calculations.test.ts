@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { findCountry } from "../data/countries";
 import type { Match } from "../types";
-import { generateCombinations } from "./calculations";
+import {
+  applyCombinationStakes,
+  generateCombinations,
+} from "./calculations";
 
 describe("generateCombinations", () => {
   it("does not generate combinations for a single match", () => {
@@ -62,5 +65,24 @@ describe("generateCombinations", () => {
     ]);
     expect(lowest.returnAmount).toBeCloseTo(134.83, 2);
     expect(lowest.profitLoss).toBeCloseTo(-25.17, 2);
+
+    const customized = applyCombinationStakes(results, 20, {
+      [results[0].id]: 5,
+      [results[1].id]: 30,
+    });
+    const totalCustomizedStake = customized.reduce(
+      (total, combination) => total + combination.stake,
+      0,
+    );
+
+    expect(totalCustomizedStake).toBe(155);
+    expect(customized[0].stake).toBe(5);
+    expect(customized[1].stake).toBe(30);
+    expect(customized[0].returnAmount).toBeCloseTo(
+      customized[0].combinedOdds * 5,
+    );
+    expect(customized[0].profitLoss).toBeCloseTo(
+      customized[0].returnAmount - 155,
+    );
   });
 });
