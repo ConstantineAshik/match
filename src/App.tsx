@@ -39,6 +39,7 @@ const createDefaultMatch = (): Match => ({
   id: createId(),
   homeTeam: findCountry("ARG"),
   awayTeam: findCountry("BRA"),
+  betAmount: 0,
   homeOdds: 2.45,
   drawOdds: 3.2,
   awayOdds: 2.75,
@@ -50,7 +51,15 @@ const loadSavedMatches = (): Match[] => {
     const saved = localStorage.getItem(MATCHES_STORAGE_KEY);
     if (!saved) return [];
     const parsed: unknown = JSON.parse(saved);
-    return Array.isArray(parsed) ? (parsed as Match[]) : [];
+    return Array.isArray(parsed)
+      ? (parsed as Match[]).map((match) => ({
+          ...match,
+          betAmount:
+            Number.isFinite(match.betAmount) && (match.betAmount ?? 0) >= 0
+              ? match.betAmount
+              : 0,
+        }))
+      : [];
   } catch {
     return [];
   }
@@ -120,6 +129,10 @@ function App() {
     [matches, stake],
   );
   const totalStake = combinations.length * stake;
+  const totalMatchBet = matches.reduce(
+    (total, match) => total + (match.betAmount ?? 0),
+    0,
+  );
   const lowestReturn = combinations.length
     ? Math.min(...combinations.map((item) => item.returnAmount))
     : 0;
@@ -157,7 +170,10 @@ function App() {
       return;
     }
 
-    setMatches((current) => [...current, ...matchesToAdd]);
+    setMatches((current) => [
+      ...current,
+      ...matchesToAdd.map((match) => ({ ...match, betAmount: 0 })),
+    ]);
     showToast(
       `${matchesToAdd.length} current ${
         matchesToAdd.length === 1 ? "match" : "matches"
@@ -182,10 +198,23 @@ function App() {
   const buildCopyText = () => {
     const lines = [
       "MatchCombo Calculator",
-      `Total Stake: ${formatCurrency(totalStake, currency)}`,
+      `Match betting money: ${formatCurrency(totalMatchBet, currency)}`,
+      `Total combination stake: ${formatCurrency(totalStake, currency)}`,
       `Combinations: ${combinations.length}`,
       "",
     ];
+    if (matches.length) {
+      lines.push("Match betting money:");
+      matches.forEach((match, index) => {
+        lines.push(
+          `${index + 1}. ${match.homeTeam.name} vs ${match.awayTeam.name}: ${formatCurrency(
+            match.betAmount ?? 0,
+            currency,
+          )}`,
+        );
+      });
+      lines.push("");
+    }
     combinations.forEach((combination, index) => {
       const resultLabel =
         combination.profitLoss >= 0 ? "Profit" : "Loss";
@@ -335,6 +364,7 @@ function App() {
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(310px,.65fr)]">
           <MatchForm
             matches={matches}
+            currency={currency}
             onMatchesChange={setMatches}
             onAddMatch={addMatch}
           />
@@ -412,10 +442,18 @@ function App() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Total stake
+                    Combination stake
                   </p>
                   <p className="mt-1 text-2xl font-black text-lime-600 dark:text-lime-400">
                     {formatCurrency(totalStake, currency)}
+                  </p>
+                </div>
+                <div className="col-span-2 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-ink-900/60">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Match betting money
+                  </p>
+                  <p className="mt-1 text-lg font-black text-slate-950 dark:text-white">
+                    {formatCurrency(totalMatchBet, currency)}
                   </p>
                 </div>
               </div>
@@ -467,6 +505,7 @@ function App() {
             matchCount={matches.length}
             combinations={combinations}
             stake={stake}
+            matchBetTotal={totalMatchBet}
             currency={currency}
           />
           <CombinationTable

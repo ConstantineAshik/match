@@ -15,6 +15,7 @@ type SummaryCardsProps = {
   matchCount: number;
   combinations: CombinationResult[];
   stake: number;
+  matchBetTotal: number;
   currency: CurrencyCode;
 };
 
@@ -22,6 +23,7 @@ export function SummaryCards({
   matchCount,
   combinations,
   stake,
+  matchBetTotal,
   currency,
 }: SummaryCardsProps) {
   const totalStake = combinations.length * stake;
@@ -40,7 +42,7 @@ export function SummaryCards({
     {
       label: "Matches",
       value: matchCount.toString(),
-      meta: "in this calculation",
+      meta: `${formatCurrency(matchBetTotal, currency)} in match bets`,
       icon: Goal,
       accent: "text-violet-500 bg-violet-100 dark:bg-violet-500/15",
     },
