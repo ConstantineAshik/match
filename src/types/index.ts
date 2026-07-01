@@ -42,6 +42,7 @@ export type CombinationResult = {
 export type CurrencyCode = "BDT" | "USD" | "EUR" | "GBP";
 
 export type SortOption =
+  | "default"
   | "lowest-return"
   | "highest-return"
   | "lowest-odds"

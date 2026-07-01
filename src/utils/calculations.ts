@@ -36,6 +36,16 @@ const toOutcome = (match: Match, type: OutcomeType): MatchOutcome => {
   };
 };
 
+const ALL_OUTCOMES: OutcomeType[] = ["HOME", "DRAW", "AWAY"];
+
+export const hasFullOutcomeCoverage = (matches: Match[]): boolean =>
+  matches.length >= 2 &&
+  matches.every((match) =>
+    ALL_OUTCOMES.every((outcome) =>
+      match.selectedOutcomes.includes(outcome),
+    ),
+  );
+
 export const validateMatch = (match: Match): string[] => {
   const errors: string[] = [];
   if (match.homeTeam.name === match.awayTeam.name) {

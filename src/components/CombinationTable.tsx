@@ -22,7 +22,7 @@ export function CombinationTable({
   currency,
   onStakeChange,
 }: CombinationTableProps) {
-  const [sortBy, setSortBy] = useState<SortOption>("lowest-return");
+  const [sortBy, setSortBy] = useState<SortOption>("default");
   const [filterBy, setFilterBy] = useState<FilterOption>("all");
   const totalStake = combinations.reduce(
     (total, combination) => total + combination.stake,
@@ -35,6 +35,8 @@ export function CombinationTable({
       if (filterBy === "loss") return combination.profitLoss < 0;
       return true;
     });
+
+    if (sortBy === "default") return filtered;
 
     return [...filtered].sort((a, b) => {
       if (sortBy === "highest-return") return b.returnAmount - a.returnAmount;
@@ -92,6 +94,7 @@ export function CombinationTable({
               }
               className="select-field w-full pl-9 sm:w-auto"
             >
+              <option value="default">Default order</option>
               <option value="lowest-return">Lowest return</option>
               <option value="highest-return">Highest return</option>
               <option value="lowest-odds">Lowest odds</option>

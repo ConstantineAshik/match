@@ -4,6 +4,7 @@ import type { Match } from "../types";
 import {
   applyCombinationStakes,
   generateCombinations,
+  hasFullOutcomeCoverage,
 } from "./calculations";
 
 describe("generateCombinations", () => {
@@ -84,5 +85,14 @@ describe("generateCombinations", () => {
     expect(customized[0].profitLoss).toBeCloseTo(
       customized[0].returnAmount - 155,
     );
+    expect(hasFullOutcomeCoverage(matches)).toBe(false);
+    expect(
+      hasFullOutcomeCoverage(
+        matches.map((match) => ({
+          ...match,
+          selectedOutcomes: ["HOME", "DRAW", "AWAY"],
+        })),
+      ),
+    ).toBe(true);
   });
 });

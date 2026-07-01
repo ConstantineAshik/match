@@ -5,13 +5,16 @@ import {
   Download,
   Moon,
   RotateCcw,
+  Scale,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Sun,
   WalletCards,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CombinationTable } from "./components/CombinationTable";
+import { DutchingCalculator } from "./components/DutchingCalculator";
 import { MatchForm } from "./components/MatchForm";
 import { OddsImporter } from "./components/OddsImporter";
 import { RiskWarning } from "./components/RiskWarning";
@@ -21,8 +24,10 @@ import type { CurrencyCode, Match } from "./types";
 import {
   applyCombinationStakes,
   generateCombinations,
+  hasFullOutcomeCoverage,
   validateMatch,
 } from "./utils/calculations";
+import { calculateDutching } from "./utils/dutching";
 import {
   currencySymbol,
   formatCurrency,
@@ -30,6 +35,8 @@ import {
 
 const MATCHES_STORAGE_KEY = "matchcombo-matches";
 const SETTINGS_STORAGE_KEY = "matchcombo-settings";
+
+type CalculationMode = "custom" | "dutching";
 
 const createId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -64,11 +71,10 @@ const loadSavedMatches = (): Match[] => {
   }
 };
 
-const escapeCsv = (value: string | number) =>
-  `"${String(value).replace(/"/g, '""')}"`;
-
 function App() {
   const [matches, setMatches] = useState<Match[]>(loadSavedMatches);
+  const [calculationMode, setCalculationMode] =
+    useState<CalculationMode>("custom");
   const [stake, setStake] = useState(() => {
     try {
       const saved = JSON.parse(
@@ -101,6 +107,31 @@ function App() {
       return {};
     }
   });
+  const [dutchingBudget, setDutchingBudget] = useState(() => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}",
+      ) as { dutchingBudget?: number };
+      return saved.dutchingBudget && saved.dutchingBudget > 0
+        ? saved.dutchingBudget
+        : 300;
+    } catch {
+      return 300;
+    }
+  });
+  const [minimumBet, setMinimumBet] = useState(() => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}",
+      ) as { minimumBet?: number };
+      return Number.isFinite(saved.minimumBet) &&
+        (saved.minimumBet ?? -1) >= 0
+        ? (saved.minimumBet ?? 15)
+        : 15;
+    } catch {
+      return 15;
+    }
+  });
   const [isDark, setIsDark] = useState(() => {
     const saved = localStorage.getItem("matchcombo-theme");
     return saved
@@ -116,9 +147,21 @@ function App() {
   useEffect(() => {
     localStorage.setItem(
       SETTINGS_STORAGE_KEY,
-      JSON.stringify({ stake, currency, combinationStakes }),
+      JSON.stringify({
+        stake,
+        currency,
+        combinationStakes,
+        dutchingBudget,
+        minimumBet,
+      }),
     );
-  }, [combinationStakes, currency, stake]);
+  }, [
+    combinationStakes,
+    currency,
+    dutchingBudget,
+    minimumBet,
+    stake,
+  ]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
@@ -136,23 +179,47 @@ function App() {
     matches.length >= 2 &&
     matches.every((match) => validateMatch(match).length === 0);
   const baseCombinations = useMemo(
-    () => generateCombinations(matches, stake),
-    [matches, stake],
+    () => generateCombinations(matches, 1),
+    [matches],
   );
   const combinations = useMemo(
     () =>
-      applyCombinationStakes(baseCombinations, stake, combinationStakes),
-    [baseCombinations, combinationStakes, stake],
+      hasValidStake
+        ? applyCombinationStakes(
+            baseCombinations,
+            stake,
+            combinationStakes,
+          )
+        : [],
+    [baseCombinations, combinationStakes, hasValidStake, stake],
   );
   const totalStake = combinations.reduce(
     (total, combination) => total + combination.stake,
     0,
   );
-  const lowestReturn = combinations.length
-    ? Math.min(...combinations.map((item) => item.returnAmount))
+  const dutchingResult = useMemo(
+    () =>
+      calculateDutching(
+        baseCombinations,
+        dutchingBudget,
+        minimumBet,
+      ),
+    [baseCombinations, dutchingBudget, minimumBet],
+  );
+  const isFullyCovered = hasFullOutcomeCoverage(matches);
+  const activeCombinations =
+    calculationMode === "dutching"
+      ? dutchingResult.allocations
+      : combinations;
+  const activeTotalStake =
+    calculationMode === "dutching"
+      ? dutchingResult.totalStake
+      : totalStake;
+  const lowestReturn = activeCombinations.length
+    ? Math.min(...activeCombinations.map((item) => item.returnAmount))
     : 0;
-  const highestReturn = combinations.length
-    ? Math.max(...combinations.map((item) => item.returnAmount))
+  const highestReturn = activeCombinations.length
+    ? Math.max(...activeCombinations.map((item) => item.returnAmount))
     : 0;
 
   const showToast = (message: string) => setToast(message);
@@ -198,6 +265,7 @@ function App() {
     }
 
     setMatches((current) => [...current, ...matchesToAdd]);
+    setCalculationMode("dutching");
     showToast(
       `${matchesToAdd.length} current ${
         matchesToAdd.length === 1 ? "match" : "matches"
@@ -216,21 +284,44 @@ function App() {
     setMatches([]);
     setStake(20);
     setCombinationStakes({});
+    setDutchingBudget(300);
+    setMinimumBet(15);
+    setCalculationMode("custom");
     setCurrency("BDT");
     showToast("Calculator reset.");
   };
 
   const buildCopyText = () => {
     const lines = [
-      "MatchCombo Calculator",
-      `Total combination stake: ${formatCurrency(totalStake, currency)}`,
-      `Combinations: ${combinations.length}`,
+      calculationMode === "dutching"
+        ? "MatchCombo Dutching Calculator"
+        : "MatchCombo Calculator",
+      `Total combination stake: ${formatCurrency(
+        activeTotalStake,
+        currency,
+      )}`,
+      `Combinations: ${activeCombinations.length}`,
       "",
     ];
-    combinations.forEach((combination, index) => {
+    if (calculationMode === "dutching") {
+      lines.push(
+        `No-loss status: ${
+          isFullyCovered && dutchingResult.noLossMathematically
+            ? "Possible"
+            : isFullyCovered
+              ? "Not possible"
+              : "Invalid — outcomes are missing"
+        }`,
+        "This calculation only works if all possible outcomes are covered.",
+        "Odds may change before bet placement.",
+        "",
+      );
+    }
+    activeCombinations.forEach((combination, index) => {
       const resultLabel =
         combination.profitLoss >= 0 ? "Profit" : "Loss";
-      const otherCombinationsLoss = totalStake - combination.stake;
+      const otherCombinationsLoss =
+        activeTotalStake - combination.stake;
       lines.push(
         `${index + 1}. ${combination.outcomes
           .map((outcome) => outcome.label)
@@ -253,7 +344,7 @@ function App() {
   };
 
   const copyResults = async () => {
-    if (!combinations.length) return;
+    if (!activeCombinations.length) return;
     try {
       await navigator.clipboard.writeText(buildCopyText());
       showToast("Results copied to clipboard.");
@@ -262,47 +353,160 @@ function App() {
     }
   };
 
-  const downloadCsv = () => {
-    if (!combinations.length) return;
-    const headers = [
-      "#",
-      "Combination",
-      "Combined Odds",
-      `Stake (${currency})`,
-      `Winning Return (${currency})`,
-      `Other Combinations Lost (${currency})`,
-      `Profit/Loss (${currency})`,
-      "Status",
-    ];
-    const rows = combinations.map((combination, index) => [
-      index + 1,
-      combination.outcomes.map((outcome) => outcome.label).join(" + "),
-      combination.combinedOdds.toFixed(6),
-      combination.stake.toFixed(2),
-      combination.returnAmount.toFixed(2),
-      (totalStake - combination.stake).toFixed(2),
-      combination.profitLoss.toFixed(2),
-      combination.profitLoss > 0
-        ? "Profit"
-        : combination.profitLoss < 0
-          ? "Loss"
-          : "Break-even",
-    ]);
-    const csv = [headers, ...rows]
-      .map((row) => row.map((value) => escapeCsv(value)).join(","))
-      .join("\r\n");
-    const blob = new Blob([`\uFEFF${csv}`], {
-      type: "text/csv;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `matchcombo-results-${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    showToast("CSV downloaded.");
+  const downloadPdf = async () => {
+    if (!activeCombinations.length) return;
+    showToast("Creating PDF...");
+
+    try {
+      const [{ jsPDF }, { autoTable }] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
+      const document = new jsPDF({
+        orientation: "landscape",
+        unit: "pt",
+        format: "a4",
+      });
+      const isDutching = calculationMode === "dutching";
+      const title = isDutching
+        ? "MatchCombo Dutching Calculator"
+        : "MatchCombo Custom Stakes";
+      const money = (value: number, showSign = false) => {
+        const sign =
+          value < 0 ? "-" : showSign && value > 0 ? "+" : "";
+        return `${sign}${currency} ${Math.abs(value).toLocaleString(
+          "en-US",
+          {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          },
+        )}`;
+      };
+
+      document.setFont("helvetica", "bold");
+      document.setFontSize(18);
+      document.text(title, 40, 42);
+      document.setFont("helvetica", "normal");
+      document.setFontSize(9);
+      document.setTextColor(90);
+      document.text(
+        `Generated ${new Date().toLocaleString("en-US")} | ${activeCombinations.length.toLocaleString()} combinations`,
+        40,
+        60,
+      );
+      document.text(
+        `Total allocated: ${money(activeTotalStake)}`,
+        40,
+        75,
+      );
+
+      let tableStartY = 94;
+      if (isDutching) {
+        const noLossStatus =
+          isFullyCovered && dutchingResult.noLossMathematically
+            ? "Possible"
+            : isFullyCovered
+              ? "Not possible"
+              : "Invalid - outcomes are missing";
+        const summary = [
+          `Budget: ${money(dutchingBudget)}`,
+          `Minimum bet: ${money(minimumBet)}`,
+          `Target return: ${money(dutchingResult.targetReturn)}`,
+          `Guaranteed return: ${money(
+            dutchingResult.guaranteedReturn,
+          )}`,
+          `No-loss status: ${noLossStatus}`,
+        ].join("  |  ");
+        document.setTextColor(40);
+        document.text(summary, 40, 92);
+        document.setTextColor(150, 80, 0);
+        document.setFont("helvetica", "bold");
+        document.text("Important:", 40, 111);
+        document.setFont("helvetica", "normal");
+        document.text(
+          "This calculation only works if all possible outcomes are covered. If any missing outcome exists, the no-loss result is not valid. Odds may change before bet placement.",
+          88,
+          111,
+          { maxWidth: 700 },
+        );
+        tableStartY = 132;
+      }
+
+      document.setTextColor(0);
+      autoTable(document, {
+        startY: tableStartY,
+        head: [
+          [
+            "#",
+            "Combination",
+            "Combined odds",
+            "Bet amount",
+            "Winning return",
+            "Other stakes lost",
+            "Net profit/loss",
+            "Status",
+          ],
+        ],
+        body: activeCombinations.map((combination, index) => [
+          index + 1,
+          combination.outcomes
+            .map((outcome) => outcome.shortLabel)
+            .join(" + "),
+          combination.combinedOdds.toFixed(3),
+          money(combination.stake),
+          money(combination.returnAmount),
+          money(activeTotalStake - combination.stake),
+          money(combination.profitLoss, true),
+          combination.profitLoss > 0
+            ? "Profit"
+            : combination.profitLoss < 0
+              ? "Loss"
+              : "Break-even",
+        ]),
+        theme: "striped",
+        styles: {
+          font: "helvetica",
+          fontSize: 7,
+          cellPadding: 3,
+          overflow: "linebreak",
+        },
+        headStyles: {
+          fillColor: [11, 18, 32],
+          textColor: [190, 242, 100],
+          fontStyle: "bold",
+        },
+        columnStyles: {
+          0: { cellWidth: 28 },
+          1: { cellWidth: 210 },
+          2: { halign: "right" },
+          3: { halign: "right" },
+          4: { halign: "right" },
+          5: { halign: "right" },
+          6: { halign: "right" },
+          7: { halign: "center" },
+        },
+        didDrawPage: (data) => {
+          const pageCount = document.getNumberOfPages();
+          document.setFontSize(7);
+          document.setTextColor(130);
+          document.text(
+            `Created by MD Ashik | ashik3232himu@gmail.com | Page ${pageCount}`,
+            data.settings.margin.left,
+            document.internal.pageSize.height - 16,
+          );
+        },
+        margin: { top: 30, right: 30, bottom: 28, left: 30 },
+      });
+
+      document.save(
+        `matchcombo-${
+          isDutching ? "dutching" : "custom-stakes"
+        }-${new Date().toISOString().slice(0, 10)}.pdf`,
+      );
+      showToast("PDF downloaded.");
+    } catch {
+      showToast("PDF export was unavailable.");
+    }
   };
 
   return (
@@ -371,6 +575,65 @@ function App() {
           onImport={importOddsMatches}
         />
 
+        <div
+          className="mb-6 grid gap-2 rounded-2xl border border-slate-200 bg-white/70 p-2 shadow-sm dark:border-slate-800 dark:bg-ink-800/70 sm:grid-cols-2"
+          role="tablist"
+          aria-label="Calculation mode"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={calculationMode === "custom"}
+            onClick={() => setCalculationMode("custom")}
+            className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left transition ${
+              calculationMode === "custom"
+                ? "bg-ink-900 text-white shadow-lg dark:bg-lime-400 dark:text-ink-950"
+                : "text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
+            }`}
+          >
+            <SlidersHorizontal size={18} className="shrink-0" />
+            <span>
+              <span className="block text-sm font-black">Custom stakes</span>
+              <span
+                className={`mt-0.5 block text-[10px] font-semibold ${
+                  calculationMode === "custom"
+                    ? "text-slate-300 dark:text-ink-800"
+                    : "text-slate-400"
+                }`}
+              >
+                Set every combination manually
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={calculationMode === "dutching"}
+            onClick={() => setCalculationMode("dutching")}
+            className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left transition ${
+              calculationMode === "dutching"
+                ? "bg-ink-900 text-white shadow-lg dark:bg-lime-400 dark:text-ink-950"
+                : "text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
+            }`}
+          >
+            <Scale size={18} className="shrink-0" />
+            <span>
+              <span className="block text-sm font-black">
+                Dutching / auto split
+              </span>
+              <span
+                className={`mt-0.5 block text-[10px] font-semibold ${
+                  calculationMode === "dutching"
+                    ? "text-slate-300 dark:text-ink-800"
+                    : "text-slate-400"
+                }`}
+              >
+                Balance returns from one total budget
+              </span>
+            </span>
+          </button>
+        </div>
+
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(310px,.65fr)]">
           <MatchForm
             matches={matches}
@@ -384,7 +647,9 @@ function App() {
                 <div>
                   <p className="section-kicker">Calculation setup</p>
                   <h2 className="mt-1 text-lg font-black text-slate-950 dark:text-white">
-                    Stake & currency
+                    {calculationMode === "dutching"
+                      ? "Dutching budget"
+                      : "Stake & currency"}
                   </h2>
                 </div>
                 <span className="grid size-9 place-items-center rounded-xl bg-lime-100 text-lime-700 dark:bg-lime-500/15 dark:text-lime-300">
@@ -392,57 +657,76 @@ function App() {
                 </span>
               </div>
 
-              <div className="mt-5 grid grid-cols-[1fr_106px] gap-3">
-                <div>
-                  <label className="field-label" htmlFor="stake">
-                    Stake for all combinations
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">
-                      {currencySymbol(currency)}
-                    </span>
-                    <input
-                      id="stake"
-                      type="number"
-                      inputMode="decimal"
-                      min="0.01"
-                      step="0.01"
-                      value={stake || ""}
-                      onChange={(event) => {
-                        setStake(Number(event.target.value));
-                        setCombinationStakes({});
-                      }}
-                      className="input-field w-full pl-8 font-extrabold"
+              {calculationMode === "custom" ? (
+                <>
+                  <div className="mt-5 grid grid-cols-[1fr_106px] gap-3">
+                    <div>
+                      <label className="field-label" htmlFor="stake">
+                        Stake for all combinations
+                      </label>
+                      <MoneyInput
+                        id="stake"
+                        value={stake}
+                        currency={currency}
+                        min={0.01}
+                        onChange={(value) => {
+                          setStake(value);
+                          setCombinationStakes({});
+                        }}
+                      />
+                    </div>
+                    <CurrencySelect
+                      currency={currency}
+                      onChange={setCurrency}
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="field-label" htmlFor="currency">
-                    Currency
-                  </label>
-                  <select
-                    id="currency"
-                    className="input-field w-full cursor-pointer font-extrabold"
-                    value={currency}
-                    onChange={(event) =>
-                      setCurrency(event.target.value as CurrencyCode)
-                    }
-                  >
-                    <option value="BDT">BDT</option>
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                  </select>
-                </div>
-              </div>
-              <p className="mt-2 text-[11px] leading-4 text-slate-400">
-                This amount updates every combination. Edit any result row
-                below to use a different amount for that combination.
-              </p>
-              {!hasValidStake && (
-                <p className="mt-2 text-xs font-semibold text-red-500">
-                  Stake must be greater than 0.
-                </p>
+                  <p className="mt-2 text-[11px] leading-4 text-slate-400">
+                    This amount updates every combination. Edit any result row
+                    below to use a different amount for that combination.
+                  </p>
+                  {!hasValidStake && (
+                    <p className="mt-2 text-xs font-semibold text-red-500">
+                      Stake must be greater than 0.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="mt-5 grid grid-cols-[1fr_106px] gap-3">
+                    <div>
+                      <label className="field-label" htmlFor="dutching-budget">
+                        Total betting money
+                      </label>
+                      <MoneyInput
+                        id="dutching-budget"
+                        value={dutchingBudget}
+                        currency={currency}
+                        min={0.01}
+                        onChange={setDutchingBudget}
+                      />
+                    </div>
+                    <CurrencySelect
+                      currency={currency}
+                      onChange={setCurrency}
+                    />
+                    <div className="col-span-2">
+                      <label className="field-label" htmlFor="minimum-bet">
+                        Minimum bet per combination
+                      </label>
+                      <MoneyInput
+                        id="minimum-bet"
+                        value={minimumBet}
+                        currency={currency}
+                        min={0}
+                        onChange={setMinimumBet}
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-4 text-slate-400">
+                    The calculator maximizes the lowest winning return and
+                    rounds every suggested bet to two decimals.
+                  </p>
+                </>
               )}
 
               <div className="my-5 h-px bg-slate-100 dark:bg-slate-700" />
@@ -453,26 +737,37 @@ function App() {
                     Combinations
                   </p>
                   <p className="mt-1 text-2xl font-black text-slate-950 dark:text-white">
-                    {combinations.length.toLocaleString()}
+                    {(calculationMode === "dutching"
+                      ? baseCombinations.length
+                      : combinations.length
+                    ).toLocaleString()}
                   </p>
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Total betting money
+                    {calculationMode === "dutching"
+                      ? "Budget"
+                      : "Total betting money"}
                   </p>
                   <p className="mt-1 text-2xl font-black text-lime-600 dark:text-lime-400">
-                    {formatCurrency(totalStake, currency)}
+                    {formatCurrency(
+                      calculationMode === "dutching"
+                        ? dutchingBudget
+                        : totalStake,
+                      currency,
+                    )}
                   </p>
                 </div>
               </div>
 
-              {(!hasValidMatches || !hasValidStake) && (
+              {calculationMode === "custom" &&
+                (!hasValidMatches || !hasValidStake) && (
                 <div className="mt-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold leading-5 text-red-600 dark:bg-red-500/10 dark:text-red-300">
                   {matches.length < 2
                     ? "Import or add at least two matches to generate combinations."
                     : "Fix the highlighted input errors to generate combinations."}
                 </div>
-              )}
+                )}
             </div>
 
             <RiskWarning matches={matches} />
@@ -481,7 +776,7 @@ function App() {
               <button
                 type="button"
                 onClick={copyResults}
-                disabled={!combinations.length}
+                disabled={!activeCombinations.length}
                 className="button-secondary flex-col px-2 py-3"
               >
                 <Copy size={15} />
@@ -489,12 +784,12 @@ function App() {
               </button>
               <button
                 type="button"
-                onClick={downloadCsv}
-                disabled={!combinations.length}
+                onClick={downloadPdf}
+                disabled={!activeCombinations.length}
                 className="button-secondary flex-col px-2 py-3"
               >
                 <Download size={15} />
-                CSV
+                PDF
               </button>
               <button
                 type="button"
@@ -508,18 +803,36 @@ function App() {
           </aside>
         </div>
 
-        <div className="mt-10 space-y-10">
-          <SummaryCards
-            matchCount={matches.length}
-            combinations={combinations}
-            stake={stake}
-            currency={currency}
-          />
-          <CombinationTable
-            combinations={combinations}
-            currency={currency}
-            onStakeChange={updateCombinationStake}
-          />
+        <div
+          className="mt-10 space-y-10"
+          role="tabpanel"
+          aria-label={
+            calculationMode === "dutching"
+              ? "Dutching results"
+              : "Custom stake results"
+          }
+        >
+          {calculationMode === "custom" ? (
+            <>
+              <SummaryCards
+                matchCount={matches.length}
+                combinations={combinations}
+                stake={stake}
+                currency={currency}
+              />
+              <CombinationTable
+                combinations={combinations}
+                currency={currency}
+                onStakeChange={updateCombinationStake}
+              />
+            </>
+          ) : (
+            <DutchingCalculator
+              result={dutchingResult}
+              currency={currency}
+              isFullyCovered={isFullyCovered}
+            />
+          )}
         </div>
 
         <footer className="mt-12 border-t border-slate-200 py-8 text-center dark:border-slate-800">
@@ -531,16 +844,34 @@ function App() {
               or gambling advice.
             </p>
           </div>
+          <p className="mt-4 text-xs font-bold text-slate-500 dark:text-slate-400">
+            Created by MD Ashik ·{" "}
+            <a
+              href="mailto:ashik3232himu@gmail.com"
+              className="text-lime-600 transition hover:text-lime-500 hover:underline dark:text-lime-400"
+            >
+              ashik3232himu@gmail.com
+            </a>
+          </p>
         </footer>
       </main>
 
       <div className="fixed inset-x-3 bottom-3 z-40 flex items-center justify-between rounded-2xl border border-white/10 bg-ink-900/95 px-4 py-3 text-white shadow-2xl backdrop-blur sm:hidden">
         <div>
           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-            {combinations.length} combinations
+            {calculationMode === "dutching"
+              ? baseCombinations.length
+              : activeCombinations.length}{" "}
+            combinations
           </p>
           <p className="mt-0.5 text-sm font-black">
-            Stake {formatCurrency(totalStake, currency)}
+            {calculationMode === "dutching" ? "Budget" : "Stake"}{" "}
+            {formatCurrency(
+              calculationMode === "dutching"
+                ? dutchingBudget
+                : activeTotalStake,
+              currency,
+            )}
           </p>
         </div>
         <div className="text-right">
@@ -563,6 +894,67 @@ function App() {
           {toast}
         </div>
       )}
+    </div>
+  );
+}
+
+function MoneyInput({
+  id,
+  value,
+  currency,
+  min,
+  onChange,
+}: {
+  id: string;
+  value: number;
+  currency: CurrencyCode;
+  min: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div className="relative">
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">
+        {currencySymbol(currency)}
+      </span>
+      <input
+        id={id}
+        type="number"
+        inputMode="decimal"
+        min={min}
+        step="0.01"
+        value={value || ""}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="input-field w-full pl-8 font-extrabold"
+      />
+    </div>
+  );
+}
+
+function CurrencySelect({
+  currency,
+  onChange,
+}: {
+  currency: CurrencyCode;
+  onChange: (currency: CurrencyCode) => void;
+}) {
+  return (
+    <div>
+      <label className="field-label" htmlFor="currency">
+        Currency
+      </label>
+      <select
+        id="currency"
+        className="input-field w-full cursor-pointer font-extrabold"
+        value={currency}
+        onChange={(event) =>
+          onChange(event.target.value as CurrencyCode)
+        }
+      >
+        <option value="BDT">BDT</option>
+        <option value="USD">USD</option>
+        <option value="EUR">EUR</option>
+        <option value="GBP">GBP</option>
+      </select>
     </div>
   );
 }
